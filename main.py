@@ -1,39 +1,36 @@
 import os
 import logging
-import smtplib
+import yagmail
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from email.message import EmailMessage
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-# Logging setup
+# Logging
 logging.basicConfig(level=logging.INFO)
 
-# Environment Variables
+# Secrets
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 GMAIL_USER = os.getenv("GMAIL_ADDRESS")
 GMAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
 
-# --- Render Port Error Fixer ---
-class HealthCheckHandler(BaseHTTPRequestHandler):
+# Render Port Fixer
+class HealthCheck(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is Live")
+        self.wfile.write(b"Bot Active")
 
-def run_health_server():
+def run_server():
     port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    server.serve_forever()
+    HTTPServer(('0.0.0.0', port), HealthCheck).serve_forever()
 
-# --- Email Sending Logic ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("বট সচল! ইমেইল পাঠাতে লিখুন: /send Subject | Message")
 
-async def send_bulk_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def send_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "|" not in update.message.text:
-        await update.message.reply_text("ভুল ফরম্যাট! /send Subject | Message এভাবে লিখুন।")
+        await update.message.reply_text("ফরম্যাট: /send Subject | Message")
         return
 
     try:
@@ -45,40 +42,19 @@ async def send_bulk_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(f"{len(emails)} জনকে পাঠানোর চেষ্টা করছি...")
 
-        # নেটওয়ার্ক এরর এড়াতে নতুন কানেকশন পদ্ধতি
-        try:
-            # Port 587 ব্যবহার করে কানেকশন
-            server = smtplib.SMTP('smtp.gmail.com', 587, timeout=30)
-            server.ehlo()
-            server.starttls() # সিকিউর কানেকশন
-            server.ehlo()
-            server.login(GMAIL_USER, GMAIL_PASS)
-            
-            for email in emails:
-                msg = EmailMessage()
-                msg.set_content(body.strip())
-                msg['Subject'] = subject.strip()
-                msg['From'] = GMAIL_USER
-                msg['To'] = email
-                server.send_message(msg)
-            
-            server.quit()
-            await update.message.reply_text("সবগুলো ইমেইল সফলভাবে পাঠানো হয়েছে! ✅")
-            
-        except Exception as smtp_err:
-            # যদি ৫8৭ কাজ না করে তবে ৪৬৫ ট্রাই করবে
-            server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=30)
-            server.login(GMAIL_USER, GMAIL_PASS)
-            # ... ইমেইল পাঠানোর কোড ...
-            server.quit()
-            await update.message.reply_text("ইমেইল পাঠানো সফল (SSL)! ✅")
-
+        # yagmail ব্যবহার করে জিমেইল পাঠানো
+        yag = yagmail.SMTP(GMAIL_USER, GMAIL_PASS)
+        
+        for email in emails:
+            yag.send(to=email, subject=subject.strip(), contents=body.strip())
+        
+        await update.message.reply_text("সফলভাবে পাঠানো হয়েছে! ✅")
     except Exception as e:
         await update.message.reply_text(f"ভুল হয়েছে: {str(e)}")
 
 if __name__ == '__main__':
-    threading.Thread(target=run_health_server, daemon=True).start()
+    threading.Thread(target=run_server, daemon=True).start()
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("send", send_bulk_email))
+    app.add_handler(CommandHandler("send", send_email))
     app.run_polling()
