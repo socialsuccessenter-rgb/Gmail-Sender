@@ -9,7 +9,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, fil
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # Environment Variables (Render থেকে আসবে)
-TOKEN = os.getenv("8673280780:AAF_KzU90nRS81x4PS33h-ucd-G_bGOw6TM")
+TOKEN = os.getenv("8673280780:AAGXC7GF1C8vjaVc8gRtQDMC4jqPTFAauEY")
 GMAIL_USER = os.getenv("socialsuccessenter@gmail.com")
 GMAIL_PASS = os.getenv("xrxi lhql wspp dvzx 6hqn n2eq mz74 njtn")
 
