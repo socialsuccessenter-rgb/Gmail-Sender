@@ -1,102 +1,106 @@
 import os
+import requests
 import logging
-import smtplib
 import threading
-import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from email.message import EmailMessage
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, CallbackQueryHandler
 from telegram.constants import ParseMode
 
-# Logging
+# Logging সেটআপ
 logging.basicConfig(level=logging.INFO)
 
-# Secrets (Render Environment Variables থেকে আসবে)
+# আপনার দেওয়া Brevo API Key এবং অন্যান্য তথ্য
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-GMAIL_USER = os.getenv("GMAIL_ADDRESS")
-GMAIL_PASS = os.getenv("GMAIL_APP_PASSWORD")
+BREVO_API_KEY = "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"
+SENDER_EMAIL = os.getenv("SENDER_EMAIL") # Render-এ আপনার জিমেইলটি সেট করে রাখুন
+SENDER_NAME = "Premium Mailer"
 
-# --- Render Port Fixer ---
+# Render Port Fixer (সার্ভার সচল রাখার জন্য)
 class HealthCheck(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Premium Email Bot is Active")
+        self.wfile.write(b"Bot is Running via Brevo API")
 
 def run_server():
     port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(('0.0.0.0', port), HealthCheck)
-    server.serve_forever()
+    HTTPServer(('0.0.0.0', port), HealthCheck).serve_forever()
 
-# --- সুন্দর ইন্টারফেস ---
+# স্টার্ট মেসেজ (নতুন ডিজাইন)
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user.first_name
-    welcome_msg = (
-        f"💎 <b>হ্যালো {user}!</b>\n\n"
-        "🚀 আপনার <b>প্রিমিয়াম ইমেইল সেন্ডার</b> এখন প্রস্তুত।\n"
-        "নিচের কমান্ডটি ব্যবহার করে প্রফেশনাল ইমেইল পাঠান:\n\n"
-        "📝 <code>/send Subject | Message</code>\n\n"
-        "⚡ <i>সিস্টেম স্ট্যাটাস চেক করতে নিচের বাটন চাপুন।</i>"
+    welcome_text = (
+        f"🚀 <b>স্বাগতম {user}!</b>\n\n"
+        "✅ আপনার বট এখন <b>Brevo API</b>-এর সাথে যুক্ত।\n"
+        "📊 এখন আপনি প্রতিদিন ৩০০টি ইমেইল পাঠাতে পারবেন।\n\n"
+        "📝 <b>ইমেইল পাঠানোর নিয়ম:</b>\n"
+        "<code>/send Subject | Message Body</code>"
     )
-    
-    keyboard = [
-        [InlineKeyboardButton("📊 সার্ভার চেক", callback_data='status')],
-        [InlineKeyboardButton("💡 সাহায্য", callback_data='help')]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(welcome_msg, reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+    keyboard = [[InlineKeyboardButton("🛠 সিস্টেম স্ট্যাটাস", callback_data='status')]]
+    await update.message.reply_text(welcome_text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode=ParseMode.HTML)
 
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# বাটন অ্যাকশন
+async def button_click(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     if query.data == 'status':
-        await query.edit_message_text("✅ <b>সার্ভার:</b> সচল\n🔐 <b>সিকিউরিটি:</b> SSL এনক্রিপ্টেড", parse_mode=ParseMode.HTML)
-    elif query.data == 'help':
-        await query.edit_message_text("❓ <b>সহায়তা:</b> ইমেইল পাঠাতে সাবজেক্ট এবং মেসেজের মাঝে অবশ্যই <code>|</code> চিহ্নটি দিবেন।", parse_mode=ParseMode.HTML)
+        await query.edit_message_text(text="🟢 <b>সার্ভার:</b> সচল\n📡 <b>মেথড:</b> Brevo API (High Speed)", parse_mode=ParseMode.HTML)
 
-# --- ইমেইল পাঠানোর মূল কাজ ---
-async def send_bulk_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# Brevo API-এর মাধ্যমে ইমেইল পাঠানোর ফাংশন
+def send_via_brevo(to_email, subject, body):
+    url = "https://api.brevo.com/v3/smtp/email"
+    payload = {
+        "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": f"<html><body><div style='font-family: Arial; padding: 20px;'>{body}</div></body></html>"
+    }
+    headers = {
+        "accept": "application/json",
+        "content-type": "application/json",
+        "api-key": BREVO_API_KEY
+    }
+    response = requests.post(url, json=payload, headers=headers)
+    return response.status_code
+
+# সেন্ড কমান্ড প্রসেসিং
+async def send_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "|" not in update.message.text:
-        await update.message.reply_text("❌ <b>ভুল পদ্ধতি!</b>\nসঠিক নিয়ম: <code>/send বিষয় | মেসেজ</code>", parse_mode=ParseMode.HTML)
+        await update.message.reply_text("❌ <b>ভুল ফরম্যাট!</b>\nসঠিক নিয়ম: <code>/send Subject | Message</code>", parse_mode=ParseMode.HTML)
         return
 
-    progress_msg = await update.message.reply_text("📡 <b>সার্ভারের সাথে কানেক্ট করা হচ্ছে...</b>", parse_mode=ParseMode.HTML)
+    msg = await update.message.reply_text("⏳ <b>ইমেইল প্রসেস করা হচ্ছে...</b>", parse_mode=ParseMode.HTML)
 
     try:
         content = update.message.text.split('/send ')[1]
         subject, body = content.split('|')
         
+        # emails.txt ফাইল থেকে ইমেইল লিস্ট পড়া
         with open('emails.txt', 'r') as f:
             emails = [line.strip() for line in f.readlines() if line.strip()]
 
-        await progress_msg.edit_text(f"📤 <b>মোট {len(emails)} জন প্রাপককে পাঠানো হচ্ছে...</b>", parse_mode=ParseMode.HTML)
+        await msg.edit_text(f"📤 <b>{len(emails)} জনকে ইমেইল পাঠানো শুরু হয়েছে...</b>", parse_mode=ParseMode.HTML)
 
-        # SSL কানেকশন (পার্থক্য এখানে)
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=45) 
-        server.login(GMAIL_USER, GMAIL_PASS)
-        
+        success_count = 0
         for email in emails:
-            msg = EmailMessage()
-            msg.set_content(body.strip())
-            msg['Subject'] = subject.strip()
-            msg['From'] = GMAIL_USER
-            msg['To'] = email
-            server.send_message(msg)
-            time.sleep(1) # সার্ভারে চাপ কমাতে ১ সেকেন্ড বিরতি
-
-        server.quit()
-        await progress_msg.edit_text("✅ <b>অভিনন্দন!</b>\nসবগুলো ইমেইল সফলভাবে পাঠানো হয়েছে। 🚀", parse_mode=ParseMode.HTML)
-
+            code = send_via_brevo(email, subject.strip(), body.strip())
+            if code == 201: # Brevo-তে ২০১ মানে সফলভাবে পাঠানো হয়েছে
+                success_count += 1
+        
+        await msg.edit_text(f"✅ <b>মিশন সফল!</b>\n{success_count} টি ইমেইল পাঠানো হয়েছে।", parse_mode=ParseMode.HTML)
     except Exception as e:
-        await progress_msg.edit_text(f"⚠️ <b>ত্রুটি ধরা পড়েছে:</b>\n<code>{str(e)}</code>", parse_mode=ParseMode.HTML)
+        await msg.edit_text(f"⚠️ <b>ত্রুটি:</b>\n<code>{str(e)}</code>", parse_mode=ParseMode.HTML)
 
 if __name__ == '__main__':
+    # সার্ভার থ্রেড চালু করা
     threading.Thread(target=run_server, daemon=True).start()
+    
+    # টেলিগ্রাম বট চালু করা
     app = ApplicationBuilder().token(TOKEN).build()
-    
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("send", send_bulk_email))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CommandHandler("send", send_command))
+    app.add_handler(CallbackQueryHandler(button_click))
     
+    print("Bot is alive...")
     app.run_polling()
