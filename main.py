@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-SENDER_NAME = "Premium Business Mailer"
+SENDER_NAME = "Flash Rewards Support"
 
 # ইমেইল লিস্ট ফাইল
 EMAIL_FILE = 'emails.txt'
