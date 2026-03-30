@@ -1,103 +1,111 @@
-import telebot
-import requests
-import time
-import os
+import os, requests, logging, threading, time
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from telegram import Update, ReplyKeyboardMarkup
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.constants import ParseMode
 
-# আপনার কনফিগারেশন
-API_KEY = "আপনার_BREVO_API_KEY" # এখানে আপনার Brevo API Key বসান
-BOT_TOKEN = "8673280780:AAEztVSGb42InjkD29lXSS3nUGqsTtgCWqE" # আপনার নতুন টোকেন সেট করে দিয়েছি
-SENDER_EMAIL = "আপনার_ভেরিফাইড_ইমেইল" # Brevo-তে যে ইমেইল ভেরিফাই করেছেন
-SENDER_NAME = "Amazon Rewards"
+logging.basicConfig(level=logging.INFO)
 
-bot = telebot.TeleBot(BOT_TOKEN)
+# --- কনফিগারেশন ---
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_NAME = "The Rewards Team"
 
-@bot.message_handler(commands=['start'])
-def send_welcome(message):
-    welcome_text = (
-        "👋 স্বাগতম Md Alamin ভাই!\n\n"
-        "✅ আপনার ইমেইল সিস্টেম এখন প্রস্তুত।\n"
-        "📩 মেইল পাঠাতে নিচের ফরম্যাটে মেসেজ দিন:\n"
-        "`/send https://your-link.com`"
-    )
-    bot.reply_to(message, welcome_text, parse_mode="Markdown")
+EMAIL_FILE = 'emails.txt'
 
-@bot.message_handler(commands=['send'])
-def start_mailing(message):
-    try:
-        # লিঙ্ক এক্সট্রাক্ট করা
-        target_link = message.text.split()[1]
-    except IndexError:
-        bot.reply_to(message, "❌ ভুল হয়েছে! এভাবে দিন: `/send https://link.com`", parse_mode="Markdown")
-        return
+# --- Health Check Server ---
+class HealthCheck(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200); self.end_headers(); self.wfile.write(b"Active")
 
-    # ইমেইল ফাইল চেক করা
-    if not os.path.exists('emails.txt'):
-        bot.reply_to(message, "❌ `emails.txt` ফাইলটি পাওয়া যায়নি!")
-        return
+def run_server():
+    port = int(os.environ.get("PORT", 8080))
+    HTTPServer(('0.0.0.0', port), HealthCheck).serve_forever()
 
-    with open('emails.txt', 'r') as f:
-        emails = [line.strip() for line in f if line.strip()]
-
-    total = len(emails)
-    if total == 0:
-        bot.reply_to(message, "❌ `emails.txt` ফাইলে কোনো ইমেইল নেই!")
-        return
-
-    sent = 0
-    failed = 0
+# --- ইমেইল ডিজাইন (আপনার টেক্সট দিয়ে সাজানো) ---
+def send_via_brevo(to_email, ad_link):
+    url = "https://api.brevo.com/v3/smtp/email"
+    subject = "🎁 Exclusive: Your Amazon Reward is waiting!"
     
-    status_msg = bot.send_message(message.chat.id, f"⏳ কাজ শুরু হচ্ছে...\n📊 মোট ইমেইল: {total}")
+    html_content = f"""
+    <html>
+    <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f9f9f9; padding: 20px; margin: 0;">
+        <table align="center" border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border: 1px solid #eeeeee; border-radius: 8px;">
+            <tr>
+                <td style="padding: 40px 30px;">
+                    <h1 style="color: #232f3e; font-size: 24px; margin-bottom: 20px;">Hi there,</h1>
+                    
+                    <p style="font-size: 16px; color: #444444; line-height: 26px;">
+                        We have some exciting news! For a very limited time, we are offering our selected users a chance to grab an <b>Amazon Gift Card</b>. 
+                    </p>
+                    
+                    <p style="font-size: 16px; color: #444444; line-height: 26px;">
+                        Whether you want to buy the latest gadgets, books, or household essentials, this is your chance to get them for free! Don't miss out—thousands of people have already claimed theirs.
+                    </p>
 
-    for email in emails:
-        url = "https://api.brevo.com/v3/smtp/email"
-        payload = {
-            "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
-            "to": [{"email": email}],
-            "subject": "Congratulations! Your Amazon Gift Card is Ready",
-            "htmlContent": f"""
-            <html>
-            <body style="font-family: Arial, sans-serif; background-color: #f4f4f4; padding: 20px;">
-                <div style="max-width: 600px; margin: auto; background: white; padding: 20px; border-radius: 10px; text-align: center;">
-                    <img src="https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg" width="120" style="margin-bottom: 20px;">
-                    <h2 style="color: #232f3e;">Exclusive Reward Just For You!</h2>
-                    <p style="font-size: 16px; color: #555;">You have been selected to receive a special Amazon Gift Card.</p>
-                    <div style="margin: 30px 0;">
-                        <a href="{target_link}" style="background-color: #ff9900; color: white; padding: 15px 25px; text-decoration: none; font-weight: bold; border-radius: 5px; font-size: 18px;">Claim Your Reward Now</a>
+                    <div style="text-align: center; margin: 40px 0;">
+                        <p style="font-size: 18px; font-weight: bold; color: #232f3e;">Claim your gift card here:</p>
+                        <a href="{ad_link.strip()}" 
+                           style="background-color: #FF9900; color: #111111; padding: 18px 45px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 4px; display: inline-block; border: 1px solid #A88734;">
+                           👉 CLAIM NOW
+                        </a>
                     </div>
-                    <p style="font-size: 12px; color: #999;">*Limited time offer. Terms and conditions apply.</p>
-                </div>
-            </body>
-            </html>
-            """
-        }
-        headers = {
-            "accept": "application/json",
-            "content-type": "application/json",
-            "api-key": API_KEY
-        }
 
+                    <p style="font-size: 16px; color: #444444; margin-top: 30px;">
+                        Best regards,<br>
+                        <strong>The Rewards Team</strong>
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <td style="background-color: #f1f1f1; padding: 20px; text-align: center; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                    <p style="font-size: 12px; color: #888888; margin: 0;">
+                        You are receiving this email because you are a registered member of our rewards network. <br>
+                        © 2026 Promotional Rewards Inc. All rights reserved.
+                    </p>
+                </td>
+            </tr>
+        </table>
+    </body>
+    </html>
+    """
+    
+    payload = {
+        "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+        "to": [{"email": to_email}],
+        "subject": subject,
+        "htmlContent": html_content
+    }
+    headers = {"accept": "application/json", "content-type": "application/json", "api-key": BREVO_API_KEY}
+    response = requests.post(url, json=payload, headers=headers)
+    return response.status_code
+
+# --- টেলিগ্রাম কমান্ডস ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    key = ReplyKeyboardMarkup([['🚀 অটো মেইল পাঠান', '📊 স্ট্যাটাস']], resize_keyboard=True)
+    await update.message.reply_text("✅ <b>ইমেইল সিস্টেম আপডেট করা হয়েছে!</b>\nআপনার দেওয়া নতুন টেক্সট এখন সেট করা আছে।", reply_markup=key, parse_mode=ParseMode.HTML)
+
+async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == '🚀 অটো মেইল পাঠান':
+        await update.message.reply_text("🔗 আপনার ডিরেক্ট লিঙ্ক দিন:\n<code>/send https://your-link.com</code>", parse_mode=ParseMode.HTML)
+    elif text.startswith('/send '):
+        link = text.split('/send ')[1].strip()
+        msg = await update.message.reply_text("⏳ নতুন ফরম্যাটে মেইল পাঠানো হচ্ছে...")
         try:
-            response = requests.post(url, json=payload, headers=headers)
-            if response.status_code in [200, 201]:
-                sent += 1
-            else:
-                failed += 1
-        except:
-            failed += 1
-        
-        # প্রতি ৩টি মেইল পর পর টেলিগ্রামে আপডেট দিবে
-        if (sent + failed) % 3 == 0 or (sent + failed) == total:
-            try:
-                bot.edit_message_text(
-                    f"🚀 মেইল পাঠানো হচ্ছে...\n\n✅ সফল: {sent}\n❌ ফেল: {failed}\n⏳ বাকি: {total - (sent + failed)}",
-                    message.chat.id,
-                    status_msg.message_id
-                )
-            except:
-                pass
-        
-        time.sleep(2.5) # সেফটির জন্য ২.৫ সেকেন্ড বিরতি
+            with open(EMAIL_FILE, 'r') as f:
+                emails = [line.strip() for line in f.readlines() if "@" in line]
+            success = 0
+            for email in emails:
+                if send_via_brevo(email, link) == 201: success += 1
+                time.sleep(1)
+            await msg.edit_text(f"✅ সফল! {success} জনকে নতুন ফরম্যাটে মেইল পাঠানো হয়েছে।")
+        except Exception as e: await msg.edit_text(f"Error: {e}")
 
-    bot.send_message(message.chat.id, f"🏁 কাজ শেষ ভাই!\n\n✅ মোট সফল: {sent}\n❌ মোট ফেল: {failed}\n📊 মোট পাঠানো হয়েছে: {total}")
-
-bot.polling()
+if __name__ == '__main__':
+    threading.Thread(target=run_server, daemon=True).start()
+    app = ApplicationBuilder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT, handle_messages))
+    app.run_polling()
