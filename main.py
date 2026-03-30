@@ -10,7 +10,7 @@ logging.basicConfig(level=logging.INFO)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 BREVO_API_KEY = os.getenv("BREVO_API_KEY")
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-SENDER_NAME = "Amazon Rewards Program"
+SENDER_NAME = "The Rewards Team"
 
 EMAIL_FILE = 'emails.txt'
 
@@ -23,52 +23,46 @@ def run_server():
     port = int(os.environ.get("PORT", 8080))
     HTTPServer(('0.0.0.0', port), HealthCheck).serve_forever()
 
-# --- ইমেইল ডিজাইন (একদম প্রফেশনাল) ---
+# --- ইমেইল ডিজাইন (আপনার টেক্সট দিয়ে সাজানো) ---
 def send_via_brevo(to_email, ad_link):
     url = "https://api.brevo.com/v3/smtp/email"
-    subject = "🎁 Notification: Your Amazon Customer Appreciation Reward is Ready"
+    subject = "🎁 Exclusive: Your Amazon Reward is waiting!"
     
     html_content = f"""
     <html>
-    <body style="font-family: 'Segoe UI', Arial, sans-serif; background-color: #f6f9fc; padding: 40px 0; margin: 0;">
-        <table align="center" border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
-            <tr>
-                <td style="background-color: #232f3e; padding: 20px; text-align: center;">
-                    <h1 style="color: #ffffff; margin: 0; font-size: 24px; letter-spacing: 1px;">AMAZON REWARDS</h1>
-                </td>
-            </tr>
+    <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f9f9f9; padding: 20px; margin: 0;">
+        <table align="center" border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border: 1px solid #eeeeee; border-radius: 8px;">
             <tr>
                 <td style="padding: 40px 30px;">
-                    <h2 style="color: #333333; font-size: 22px; margin-bottom: 20px;">Congratulations! Your Reward is Waiting</h2>
-                    <p style="font-size: 16px; color: #555555; line-height: 24px;">
-                        Hello, <br><br>
-                        We are excited to inform you that as a part of our <b>2026 Customer Appreciation Loyalty Program</b>, you have been selected to receive a promotional gift card. We value your presence in our community and this is our way of saying thank you.
-                    </p>
-                    <p style="font-size: 16px; color: #555555; line-height: 24px;">
-                        To secure your reward, please verify your account and claim your gift code using the secure link provided below. This offer is exclusive to your email address and is valid for a limited time only.
+                    <h1 style="color: #232f3e; font-size: 24px; margin-bottom: 20px;">Hi there,</h1>
+                    
+                    <p style="font-size: 16px; color: #444444; line-height: 26px;">
+                        We have some exciting news! For a very limited time, we are offering our selected users a chance to grab an <b>Amazon Gift Card</b>. 
                     </p>
                     
-                    <table align="center" border="0" cellpadding="0" cellspacing="0" style="margin: 35px 0;">
-                        <tr>
-                            <td align="center" style="border-radius: 4px;" bgcolor="#ff9900">
-                                <a href="{ad_link.strip()}" style="font-size: 18px; font-weight: bold; color: #111111; text-decoration: none; padding: 18px 40px; border: 1px solid #a88734; display: inline-block; border-radius: 4px;">
-                                    CLAIM YOUR $500 GIFT CARD NOW
-                                </a>
-                            </td>
-                        </tr>
-                    </table>
-                    
-                    <p style="font-size: 14px; color: #888888; font-style: italic;">
-                        *Disclaimer: This is a promotional offer. No purchase is necessary. You must claim your reward within 24 hours of receiving this email to ensure its validity.
+                    <p style="font-size: 16px; color: #444444; line-height: 26px;">
+                        Whether you want to buy the latest gadgets, books, or household essentials, this is your chance to get them for free! Don't miss out—thousands of people have already claimed theirs.
+                    </p>
+
+                    <div style="text-align: center; margin: 40px 0;">
+                        <p style="font-size: 18px; font-weight: bold; color: #232f3e;">Claim your gift card here:</p>
+                        <a href="{ad_link.strip()}" 
+                           style="background-color: #FF9900; color: #111111; padding: 18px 45px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 4px; display: inline-block; border: 1px solid #A88734;">
+                           👉 CLAIM NOW
+                        </a>
+                    </div>
+
+                    <p style="font-size: 16px; color: #444444; margin-top: 30px;">
+                        Best regards,<br>
+                        <strong>The Rewards Team</strong>
                     </p>
                 </td>
             </tr>
             <tr>
-                <td style="background-color: #f1f3f5; padding: 25px; text-align: center; border-top: 1px solid #eeeeee;">
-                    <p style="font-size: 12px; color: #999999; margin: 0;">
-                        © 2026 Amazon Promotional Distribution Center. <br>
-                        1200 12th Ave S, Seattle, WA 98144, USA. <br>
-                        You received this email because you are a part of our rewards network.
+                <td style="background-color: #f1f1f1; padding: 20px; text-align: center; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
+                    <p style="font-size: 12px; color: #888888; margin: 0;">
+                        You are receiving this email because you are a registered member of our rewards network. <br>
+                        © 2026 Promotional Rewards Inc. All rights reserved.
                     </p>
                 </td>
             </tr>
@@ -87,18 +81,18 @@ def send_via_brevo(to_email, ad_link):
     response = requests.post(url, json=payload, headers=headers)
     return response.status_code
 
-# --- টেলিগ্রাম হ্যান্ডলারস ---
+# --- টেলিগ্রাম কমান্ডস ---
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    key = ReplyKeyboardMarkup([['🚀 অটো মেইল পাঠান', '📊 ড্যাশবোর্ড']], resize_keyboard=True)
-    await update.message.reply_text("💎 <b>Amazon Official Mailer প্রস্তুত!</b>", reply_markup=key, parse_mode=ParseMode.HTML)
+    key = ReplyKeyboardMarkup([['🚀 অটো মেইল পাঠান', '📊 স্ট্যাটাস']], resize_keyboard=True)
+    await update.message.reply_text("✅ <b>ইমেইল সিস্টেম আপডেট করা হয়েছে!</b>\nআপনার দেওয়া নতুন টেক্সট এখন সেট করা আছে।", reply_markup=key, parse_mode=ParseMode.HTML)
 
 async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == '🚀 অটো মেইল পাঠান':
-        await update.message.reply_text("🔗 লিঙ্ক দিন: <code>/send https://your-link.com</code>", parse_mode=ParseMode.HTML)
+        await update.message.reply_text("🔗 আপনার ডিরেক্ট লিঙ্ক দিন:\n<code>/send https://your-link.com</code>", parse_mode=ParseMode.HTML)
     elif text.startswith('/send '):
         link = text.split('/send ')[1].strip()
-        msg = await update.message.reply_text("⏳ প্রফেশনাল মেইল পাঠানো হচ্ছে...")
+        msg = await update.message.reply_text("⏳ নতুন ফরম্যাটে মেইল পাঠানো হচ্ছে...")
         try:
             with open(EMAIL_FILE, 'r') as f:
                 emails = [line.strip() for line in f.readlines() if "@" in line]
@@ -106,7 +100,7 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for email in emails:
                 if send_via_brevo(email, link) == 201: success += 1
                 time.sleep(1)
-            await msg.edit_text(f"✅ সফল! {success} টি প্রফেশনাল মেইল পাঠানো হয়েছে।")
+            await msg.edit_text(f"✅ সফল! {success} জনকে নতুন ফরম্যাটে মেইল পাঠানো হয়েছে।")
         except Exception as e: await msg.edit_text(f"Error: {e}")
 
 if __name__ == '__main__':
