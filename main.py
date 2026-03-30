@@ -1,111 +1,79 @@
-import os, requests, logging, threading, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
-from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes, MessageHandler, filters
-from telegram.constants import ParseMode
+import telebot
+import requests
+import time
+import os
 
-logging.basicConfig(level=logging.INFO)
+# আপনার তথ্যগুলো এখানে দিন
+API_KEY = "আপনার_BREVO_API_KEY"
+BOT_TOKEN = "আপনার_টেলিগ্রাম_বট_টোকেন"
+SENDER_EMAIL = "আপনার_ভেরিফাইড_ইমেইল"
+SENDER_NAME = "Amazon Rewards"
 
-# --- কনফিগারেশন ---
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-BREVO_API_KEY = os.getenv("BREVO_API_KEY")
-SENDER_EMAIL = os.getenv("SENDER_EMAIL")
-SENDER_NAME = "The Rewards Team"
+bot = telebot.TeleBot(BOT_TOKEN)
 
-EMAIL_FILE = 'emails.txt'
+@bot.message_id_handler(commands=['start'])
+def send_welcome(message):
+    bot.reply_to(message, "✅ বট অ্যাক্টিভ আছে!\nমেইল পাঠাতে /send লিখে আপনার লিঙ্কটি দিন।\nউদাহরণ: /send https://google.com")
 
-# --- Health Check Server ---
-class HealthCheck(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200); self.end_headers(); self.wfile.write(b"Active")
+@bot.message_handler(commands=['send'])
+def start_mailing(message):
+    try:
+        target_link = message.text.split()[1]
+    except IndexError:
+        bot.reply_to(message, "❌ লিঙ্ক দেননি! সঠিক নিয়ম: /send https://yourlink.com")
+        return
 
-def run_server():
-    port = int(os.environ.get("PORT", 8080))
-    HTTPServer(('0.0.0.0', port), HealthCheck).serve_forever()
+    if not os.path.exists('emails.txt'):
+        bot.reply_to(message, "❌ emails.txt ফাইলটি পাওয়া যায়নি!")
+        return
 
-# --- ইমেইল ডিজাইন (আপনার টেক্সট দিয়ে সাজানো) ---
-def send_via_brevo(to_email, ad_link):
-    url = "https://api.brevo.com/v3/smtp/email"
-    subject = "🎁 Exclusive: Your Amazon Reward is waiting!"
+    with open('emails.txt', 'r') as f:
+        emails = [line.strip() for line in f if line.strip()]
+
+    total = len(emails)
+    sent = 0
+    failed = 0
     
-    html_content = f"""
-    <html>
-    <body style="font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f9f9f9; padding: 20px; margin: 0;">
-        <table align="center" border="0" cellpadding="0" cellspacing="0" width="600" style="background-color: #ffffff; border: 1px solid #eeeeee; border-radius: 8px;">
-            <tr>
-                <td style="padding: 40px 30px;">
-                    <h1 style="color: #232f3e; font-size: 24px; margin-bottom: 20px;">Hi there,</h1>
-                    
-                    <p style="font-size: 16px; color: #444444; line-height: 26px;">
-                        We have some exciting news! For a very limited time, we are offering our selected users a chance to grab an <b>Amazon Gift Card</b>. 
-                    </p>
-                    
-                    <p style="font-size: 16px; color: #444444; line-height: 26px;">
-                        Whether you want to buy the latest gadgets, books, or household essentials, this is your chance to get them for free! Don't miss out—thousands of people have already claimed theirs.
-                    </p>
+    status_msg = bot.send_message(message.chat.id, f"⏳ মেইল পাঠানো শুরু হচ্ছে...\nমোট ইমেইল: {total}")
 
-                    <div style="text-align: center; margin: 40px 0;">
-                        <p style="font-size: 18px; font-weight: bold; color: #232f3e;">Claim your gift card here:</p>
-                        <a href="{ad_link.strip()}" 
-                           style="background-color: #FF9900; color: #111111; padding: 18px 45px; text-decoration: none; font-size: 18px; font-weight: bold; border-radius: 4px; display: inline-block; border: 1px solid #A88734;">
-                           👉 CLAIM NOW
-                        </a>
-                    </div>
+    for email in emails:
+        url = "https://api.brevo.com/v3/smtp/email"
+        payload = {
+            "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+            "to": [{"email": email}],
+            "subject": "Exclusive Gift Card Waiting for You!",
+            "htmlContent": f"""
+            <div style='text-align:center; font-family:Arial;'>
+                <img src='https://upload.wikimedia.org/wikipedia/commons/a/a9/Amazon_logo.svg' width='150'>
+                <h2>Congratulations!</h2>
+                <p>You have been selected for a special Amazon Gift Card.</p>
+                <a href='{target_link}' style='background:#f0c14b; padding:10px 20px; color:black; text-decoration:none; border-radius:5px;'>Claim Your Reward Now</a>
+            </div>
+            """
+        }
+        headers = {
+            "accept": "application/json",
+            "content-type": "application/json",
+            "api-key": API_KEY
+        }
 
-                    <p style="font-size: 16px; color: #444444; margin-top: 30px;">
-                        Best regards,<br>
-                        <strong>The Rewards Team</strong>
-                    </p>
-                </td>
-            </tr>
-            <tr>
-                <td style="background-color: #f1f1f1; padding: 20px; text-align: center; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;">
-                    <p style="font-size: 12px; color: #888888; margin: 0;">
-                        You are receiving this email because you are a registered member of our rewards network. <br>
-                        © 2026 Promotional Rewards Inc. All rights reserved.
-                    </p>
-                </td>
-            </tr>
-        </table>
-    </body>
-    </html>
-    """
-    
-    payload = {
-        "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
-        "to": [{"email": to_email}],
-        "subject": subject,
-        "htmlContent": html_content
-    }
-    headers = {"accept": "application/json", "content-type": "application/json", "api-key": BREVO_API_KEY}
-    response = requests.post(url, json=payload, headers=headers)
-    return response.status_code
+        response = requests.post(url, json=payload, headers=headers)
 
-# --- টেলিগ্রাম কমান্ডস ---
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    key = ReplyKeyboardMarkup([['🚀 অটো মেইল পাঠান', '📊 স্ট্যাটাস']], resize_keyboard=True)
-    await update.message.reply_text("✅ <b>ইমেইল সিস্টেম আপডেট করা হয়েছে!</b>\nআপনার দেওয়া নতুন টেক্সট এখন সেট করা আছে।", reply_markup=key, parse_mode=ParseMode.HTML)
+        if response.status_code == 201 or response.status_code == 200:
+            sent += 1
+        else:
+            failed += 1
+        
+        # প্রতি ৫টি মেইল পর পর টেলিগ্রামে আপডেট দেবে
+        if (sent + failed) % 5 == 0:
+            bot.edit_message_text(
+                f"🚀 মেইল পাঠানো হচ্ছে...\n✅ সফল: {sent}\n❌ ফেল: {failed}\n⏳ বাকি: {total - (sent + failed)}",
+                message.chat.id,
+                status_msg.message_id
+            )
+        
+        time.sleep(2) # স্পিড বাড়িয়ে ২ সেকেন্ড করে দেওয়া হয়েছে
 
-async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
-    if text == '🚀 অটো মেইল পাঠান':
-        await update.message.reply_text("🔗 আপনার ডিরেক্ট লিঙ্ক দিন:\n<code>/send https://your-link.com</code>", parse_mode=ParseMode.HTML)
-    elif text.startswith('/send '):
-        link = text.split('/send ')[1].strip()
-        msg = await update.message.reply_text("⏳ নতুন ফরম্যাটে মেইল পাঠানো হচ্ছে...")
-        try:
-            with open(EMAIL_FILE, 'r') as f:
-                emails = [line.strip() for line in f.readlines() if "@" in line]
-            success = 0
-            for email in emails:
-                if send_via_brevo(email, link) == 201: success += 1
-                time.sleep(1)
-            await msg.edit_text(f"✅ সফল! {success} জনকে নতুন ফরম্যাটে মেইল পাঠানো হয়েছে।")
-        except Exception as e: await msg.edit_text(f"Error: {e}")
+    bot.send_message(message.chat.id, f"🏁 কাজ শেষ!\n✅ মোট সফল: {sent}\n❌ মোট ফেল: {failed}")
 
-if __name__ == '__main__':
-    threading.Thread(target=run_server, daemon=True).start()
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT, handle_messages))
-    app.run_polling()
+bot.polling()
