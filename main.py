@@ -9,7 +9,7 @@ BOT_TOKEN = "আপনার_টেলিগ্রাম_বট_টোকেন"
 SENDER_EMAIL = "আপনার_ভেরিফাইড_ইমেইল"
 SENDER_NAME = "Amazon Rewards"
 
-bot = telebot.TeleBot(BOT_TOKEN)
+bot = telebot.TeleBot(8673280780:AAEztVSGb42InjkD29lXSS3nUGqsTtgCWqE)
 
 @bot.message_id_handler(commands=['start'])
 def send_welcome(message):
